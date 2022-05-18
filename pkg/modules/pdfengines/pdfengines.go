@@ -178,6 +178,7 @@ func (mod PDFEngines) Routes() ([]api.Route, error) {
 	return []api.Route{
 		mergeRoute(engine),
 		convertRoute(engine),
+		generateThumbnailRoute(engine),
 	}, nil
 }
 

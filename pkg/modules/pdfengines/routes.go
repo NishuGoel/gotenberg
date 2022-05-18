@@ -145,3 +145,63 @@ func convertRoute(engine gotenberg.PDFEngine) api.Route {
 		},
 	}
 }
+
+func generateThumbnailRoute(engine gotenberg.PDFEngine) api.Route {
+	return api.Route{
+		Method:      http.MethodPost,
+		Path:        "/forms/pdfengines/convert",
+		IsMultipart: true,
+		Handler: func(c echo.Context) error {
+			ctx := c.Get("context").(*api.Context)
+
+			// Let's get the data from the form and validate them.
+			var (
+				inputPaths []string
+				PDFformat  string
+			)
+
+			err := ctx.FormData().
+				MandatoryPaths([]string{".pdf"}, &inputPaths).
+				MandatoryString("pdfFormat", &PDFformat).
+				Validate()
+
+			if err != nil {
+				return fmt.Errorf("validate form data: %w", err)
+			}
+
+			// Alright, let's merge the PDFs.
+
+			outputPaths := make([]string, len(inputPaths))
+
+			for i, inputPath := range inputPaths {
+				outputPaths[i] = ctx.GeneratePath(".pdf")
+
+				err = engine.Convert(ctx, ctx.Log(), PDFformat, inputPath, outputPaths[i])
+
+				if err != nil {
+					if errors.Is(err, gotenberg.ErrPDFFormatNotAvailable) {
+						return api.WrapError(
+							fmt.Errorf("convert PDF: %w", err),
+							api.NewSentinelHTTPError(
+								http.StatusBadRequest,
+								fmt.Sprintf("At least one PDF engine does not handle the PDF format '%s' (pdfFormat), while other have failed to convert for other reasons", PDFformat),
+							),
+						)
+					}
+
+					return fmt.Errorf("convert PDF: %w", err)
+				}
+			}
+
+			// Last but not least, add the output paths to the context so that
+			// the API is able to send them as a response to the client.
+
+			err = ctx.AddOutputPaths(outputPaths...)
+			if err != nil {
+				return fmt.Errorf("add output paths: %w", err)
+			}
+
+			return nil
+		},
+	}
+}
